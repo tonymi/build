@@ -1,0 +1,78 @@
+{
+  "description": "Local build, post to AWS ", 
+
+  "builders": [
+    {
+      "headless": true,
+      "type": "vmware-iso",
+      "boot_command": [
+        "<tab> text ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks.cfg<enter><wait>"
+      ],
+      "boot_wait": "10s",
+      "disk_size": 8192,
+      "guest_os_type": "rhel7",
+      "http_directory": "http",
+      "iso_url": "{{user `iso_url`}}",
+      "iso_checksum_type": "sha256",
+      "iso_checksum": "{{user `iso_sha256`}}",
+      "ssh_username": "vagrant",
+      "ssh_private_key_file": "vagrant_rsa_key",
+      "ssh_port": 22,
+      "ssh_wait_timeout": "10000s",
+      "shutdown_command": "echo '/sbin/halt -h -p' > /tmp/shutdown.sh; echo 'vagrant'|sudo -S sh '/tmp/shutdown.sh'",
+      "tools_upload_flavor": "linux",
+      "tools_upload_path": "/tmp/vmware_tools_{{.Flavor}}.iso",
+      "vmx_data": {
+        "memsize": "1024",
+        "numvcpus": "1",
+        "cpuid.coresPerSocket": "1"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "execute_command": "echo 'vagrant'|sudo -S sh '{{.Path}}'",
+      "override": {
+        "vmware-iso": {
+          "scripts": [
+            "scripts/base.sh",
+            "scripts/vmware.sh",
+            "scripts/hgfs.sh",
+            "scripts/cleanup.sh",
+            "scripts/zerodisk.sh"
+          ]
+        }
+      }
+    }
+  ],
+
+  "post-processors": [
+    [
+      {
+         "inline": [
+            "/usr/local/bin/ovftool output-vmware-iso/packer-vmware-iso.vmx packer-vmware-iso.ova"
+         ],
+         "type": "shell-local"
+      },
+      {
+        "files": [
+           "packer-vmware-iso.ova"
+        ],
+        "type": "artifice"
+      },
+      {
+        "access_key": "{{user `aws_access_key`}}",
+        "secret_key": "{{user `aws_secret_key`}}",
+        "region": "us-east-1",
+        "ami_name": "ami-packer-centos7-latest-{{timestamp}}",
+        "s3_bucket_name": "imported-image",
+        "s3_key_name": "packer-build",
+        "tags": {
+          "Description": "packer amazon-import packer-vmware-iso OVA {{timestamp}}"
+        },
+        "type": "amazon-import"
+      }
+    ]
+  ]
+}
